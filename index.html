@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<title>Document</title>
+	<style>
+		html, body {
+			width: 100%;
+			height: 100%;
+			margin: 0;
+		}
+	</style>
+</head>
+<body>
+	<canvas id="canvas"></canvas>
+
+<script>
+
+var canvas = document.getElementById("canvas")
+canvas.width = window.innerWidth
+canvas.height = window.innerHeight
+var ctx = canvas.getContext("2d")
+
+const clear = () => ctx.clearRect(0,0,canvas.width, canvas.height)
+
+var objects = []
+
+class Wall {
+	constructor () {
+		this.spaceHeigth = 150
+		this.speed = 0.37
+		this.width = 70
+		this.nextWallSpace = 300
+
+		var ch = canvas.height
+		var cw = canvas.width
+
+		this.x = cw
+		var quad = Math.floor(ch / 4)
+		this.isLast = true
+
+		this.upperH = quad + Math.floor(Math.random() * ch / 2 - this.spaceHeigth / 2)
+		this.lowerH = ch - this.upperH - this.spaceHeigth
+
+	}
+
+	draw (past, ts) {
+		// console.log(past)
+		this.x -= past * this.speed
+		// var quad = Math.floor(canvas.height / 4)
+		// var ch = canvas.height
+		// var cw = canvas.width
+		// this.upperH = quad + this.height
+		// this.lowerH = ch - this.upperH + this.spaceHeigth
+
+		ctx.fillRect (Math.floor(this.x), 0, this.width, this.upperH)
+		ctx.fillRect (Math.floor(this.x), this.upperH + this.spaceHeigth, this.width, this.lowerH)
+
+		if (this.isLast && this.x < canvas.width - this.nextWallSpace - this.width) {
+			this.isLast = false
+			objects.unshift(new Wall())
+		}
+
+		if (this.x < -1 * this.width) {
+			objects = objects.filter(o => o !== this)
+		}
+	}
+}
+
+class Bird {
+	constructor () {
+		this.x = 50	
+		this.y = Math.floor(canvas.height / 2)
+		this.vy = 0
+		this.ay = 0.002
+		this.jumpSpeed = 0.4
+
+		this.color = 'red'
+		this.isDead = false
+
+		this.brain = new Brain(6,2,1)
+		this.birth = Date.now()
+		this.score = 0
+	}
+
+	die() {
+		this.isDead = true
+		this.score = Date.now() - this.birth
+		this.color = "blue"
+		this.x = 10
+	}
+
+	testDeath () {
+		var cw = canvas.width
+		var ch = canvas.height
+
+		if (this.y > ch || this.y < 0) {
+			this.die()
+		}
+
+		if (this.closeWall.x < (this.x + 20) && this.closeWall.x + this.closeWall.width > this.x) {
+			// console.log(this.y + " " + this.closeWall.upperH)
+			if (this.y < this.closeWall.upperH || this.y + 20 > this.closeWall.upperH + this.closeWall.spaceHeigth) {
+				this.die()
+				// this.color = "blue"
+			}
+		}
+	}
+
+	decide () {
+		var cw = canvas.width
+		var ch = canvas.height
+
+		var inputHeght = this.y / ch
+		var toWallBegin = (this.closeWall.x - this.x) / cw
+		var toWallEnd = (this.closeWall.x + this.closeWall.width - this.x) / cw
+		var toSpaceU = (this.closeWall.upperH) / ch
+		var toSpaceL = (this.closeWall.upperH + this.closeWall.spaceHeigth) / ch
+
+		var senses = [
+		  toWallBegin,
+		  toWallEnd,
+		  toSpaceU,
+		  toSpaceL,
+		  inputHeght,
+		  this.vy
+		]
+
+		// console.log(senses)
+
+		var decigion = this.brain.decide(senses)[0]
+
+		// console.log(decigion)
+
+		if (decigion > 0.5) {
+			this.jump()
+		}
+	}
+
+
+	move (past, ts) {
+		if (spacePressed) {
+			this.jump()
+		}
+		this.vy += this.ay * past
+		this.y += this.vy *  past
+
+		var walls = objects.filter(o => o instanceof Wall)
+		this.closeWall = walls.reduce((p,c) => c.x + c.width > this.x + 20? (c.x < p.x? c : p) : p, walls[0])
+
+		this.testDeath()
+		this.decide()
+	}
+
+	jump () {
+		this.vy -= this.jumpSpeed
+		// this.vy = -0.5
+	}
+
+	draw (past, ts) {
+		if (!this.isDead) {
+			this.move(past,ts)
+		}
+
+		ctx.fillStyle = this.color
+		ctx.fillRect(this.x, this.y, 20, 20)
+		ctx.fillStyle = "black"
+	}
+}
+
+
+class Neuron {
+	constructor (k) {
+		this.alpha = 0.5
+		this.k = k.map(k => {
+			let evolution = Math.random() * window.variety - window.variety / 2
+			k += evolution
+			// k < 0 && (k = 0)
+			// k > 1 && (k = 1)
+			return k
+		})
+	}
+
+	decide(...inputs) {
+		var s = inputs
+			// .filter(i => i > 0.1)
+			.reduce((p,c,i) => p + (c * this.k[i]) , 0)
+		// console.log(s)
+		this.decigion = 1 / (1 + Math.exp(-1 * this.alpha * s))
+		// console.log(this.decigion)
+		return this.decigion
+		
+	}
+}
+
+class Brain {
+	constructor (inputs, ...n) {
+		this.layers = n.map((l,i) => (new Array(l)).fill( new Neuron((new Array(i == 0? inputs: n[i-1])).fill(0.5))))
+	}
+
+	extend (b) {
+		this.layers = b.layers.map(l => l.map(n => new Neuron(n.k)))
+	}
+
+	decide (inputs) {
+		this.decigion = this.layers.reduce((p,c,i) => {
+			return c.map(n => n.decide(...p))
+		}, inputs)
+		// console.log(this.decigion)
+		return this.decigion
+	}
+}
+
+// events
+var spacePressed = false
+document.onkeydown = function (e) {
+	if (e.keyCode == 32) {
+		// var alivBbirds = objects.filter(o => o instanceof Bird && !o.isDead)
+		// alivBbirds.map(b => b.jump())
+		spacePressed = true
+	}
+}
+document.onkeyup = function (e) {
+	if (e.keyCode == 32) {
+		spacePressed = false
+	}
+}
+
+// init
+var smartBirds = [
+  new Bird(),
+  new Bird(),
+  new Bird(),
+  new Bird(),
+  new Bird(),
+  new Bird(),
+  new Bird(),
+  new Bird(),
+  new Bird(),
+  new Bird(),
+]
+
+
+var generation = 0
+var variety = 2
+var lastScore = 1
+var allowChangeVariety = true
+var oneFamily = false
+const restart = () => {
+	var newObjects = [
+		new Wall(),
+		new Bird(),
+		new Bird(),
+		new Bird(),
+		new Bird(),
+		new Bird(),
+		new Bird(),
+		new Bird(),
+		new Bird(),
+		new Bird(),
+		new Bird(),
+	]
+	if (undefined !== window.objects && window.objects.length) {
+		var birds = window.objects
+			.filter(o => o instanceof Bird)
+		var newBirds = newObjects
+			.filter(o => o instanceof Bird)
+
+	  if (oneFamily) {
+		  var smartestBird = birds
+			  .reduce((p,c) => p.score > c.score? p : c, birds[0])
+		  var smartestBrain = smartestBird.brain
+
+		  if (allowChangeVariety && generation % 10 == 0) {
+			  var progress = smartestBird.score / lastScore
+			  if (progress > 2) {
+				  variety *= 0.7
+			  } else if (progress > 1.1) {
+				  variety *= 0.95
+			  } else if (progress > 0.9) {
+				  variety *= 1.01
+			  } else {
+				  variety *= 1.1
+			  }
+
+			  lastScore = smartestBird.score
+		  }
+
+		  newBirds.map(b => b.brain.extend(smartestBrain))
+			  // .map((b,i) => b.brain.extend(birds[i].brain))
+		  // more cheat
+		  newBirds[0],brain = smartestBrain
+	  } else {
+	    newBirds.map((b,i) => {
+	      let saveBird = smartBirds[i]
+	      let lastBird = birds[i]
+	      
+	      if (lastBird.score > saveBird.score) {
+	        smartBirds[i] = lastBird
+	      }
+
+	      b.brain.extend(smartBirds[i].brain)
+
+	    })
+	  }
+
+		var step = Math.floor(128 / newBirds.length)
+		newBirds.map((b, i) => b.color = "#"+(127 + i * step).toString(16).padStart(2,0) + (255 - i * step).toString(16).padStart(2,0) + "40")
+
+	}
+
+	window.objects = newObjects
+	window.generation++
+
+}
+restart()
+
+// loop
+var prevTime = 0
+const loop = (ts) => {
+	
+	var past = ts - prevTime
+	prevTime = ts
+
+	clear()
+	objects.map(o => o.draw(past, ts))
+
+	var alivBbirds = objects.filter(o => o instanceof Bird && !o.isDead)
+	if (!alivBbirds.length) {
+		restart()
+	}
+	
+	window.requestAnimationFrame(loop, canvas)
+}
+
+window.requestAnimationFrame(loop, canvas)
+
+/*
+  "-0.64181, -0.96882, -5.1303, -2.2881, -1.0693, 2.5631
+1.8917, -1.7340, -2.9986, -0.93106, -4.6595, 1.5372
+3.6664, -4.1599
+
+1.2357, -1.2014, -2.8986, -0.85470, 2.4259, 1.4495
+-0.59219, 0.37718, 2.3651, -0.88626, -2.0902, -1.6431
+1.4617, -1.6899
+
+-1.0958, 1.0844, 0.24891, 2.3070, -2.7212, -0.39316
+-0.84412, 0.34231, -1.2589, 0.84876, 0.38390, 0.62560
+-3.2320, 3.0854"
+*/
+
+
+</script>
+
+</body>
+</html>
